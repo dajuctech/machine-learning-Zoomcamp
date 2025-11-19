@@ -1,126 +1,124 @@
-# 🧠 Stroke Risk Prediction – ML Zoomcamp Midterm
+# 🧠 Stroke Risk Prediction (ML Zoomcamp Midterm)
 
-Predicting the probability that a patient will suffer a stroke by combining demographic variables with basic clinical measurements. The project follows the ML Zoomcamp midterm guidelines: start with a notebook-driven exploration, move to reproducible scripts, and expose the final model behind an API + lightweight UI.
-
----
-
-## 🎯 Project Overview
-
-- **Problem**: Binary classification (`stroke` ∈ {0,1}) for early risk stratification using routinely available features.
-- **Dataset**: [Kaggle – Healthcare Dataset Stroke Data](https://www.kaggle.com/datasets/fedesoriano/stroke-prediction-dataset) (5,110 encounters, 249 positives).
-- **Primary metric**: ROC AUC (robust to class imbalance, focuses on ranking ability).
-- **Stack**: Pandas, scikit-learn (Gradient Boosting), Flask API, Streamlit UI.
-- **Deliverables**: Reusable training/inference script (`src/`), saved model (`models/model.bin`), REST API (`app/main.py`), interactive dashboard (`app/streamlit_app.py`), notebooks for transparency (`notebooks/`).
+End-to-end stroke risk classifier following the ML Zoomcamp midterm template: notebooks for exploration, reproducible training scripts, saved models, and a small serving stack (Flask API + Streamlit UI).
 
 ---
 
-## 📊 Dataset
+## Project Highlights
 
-| Feature | Type | Notes |
+- **Objective:** classify whether a patient will suffer a stroke using demographic and clinical indicators.
+- **Dataset:** [Healthcare Dataset Stroke Data](https://www.kaggle.com/datasets/fedesoriano/stroke-prediction-dataset) (5,110 rows, 12 columns) stored in `data/raw/healthcare-dataset-stroke-data.csv`.
+- **Target:** `stroke` ∈ {0,1} with 4.87 % positives (see `reports/eda_summary.txt`).
+- **Primary metric:** ROC AUC (less sensitive to imbalance than accuracy).
+- **Stack:** pandas, scikit-learn (Gradient Boosting + preprocessing pipeline), Flask, Streamlit.
+- **Deliverables:** notebooks (`notebooks/`), training & inference scripts (`src/`), serialized models (`models/`), API/UI (`app/`), data splits (`data/processed/`).
+
+---
+
+## Repository Map
+
+| Path | Description |
+| --- | --- |
+| `app/main.py` | Flask REST API exposing `/predict`. |
+| `app/streamlit_app.py` | Streamlit front-end that calls the API. |
+| `data/raw/` | Kaggle CSV plus other raw datasets used elsewhere. |
+| `data/processed/` | Stratified `train.csv`, `val.csv`, `test.csv`. |
+| `models/` | Pickled models (`model.bin` is the latest GB pipeline) + `model_comparison.csv`. |
+| `notebooks/01_eda.ipynb` → `05_trees_and_tuning.ipynb` | Step-by-step EDA, baselines, tuning. |
+| `reports/eda_summary.txt` | Quick stats extracted from notebooks. |
+| `scripts/download_data.py` | Example script for downloading raw data. |
+| `src/train.py` | Main training pipeline (loads raw CSV, preprocesses, trains Gradient Boosting, saves `models/model.bin`). |
+| `src/predict.py` | Reusable `predict_single` helper for batch/CLI inference. |
+| `requirements.txt` | Minimal deps (pandas, numpy, scikit-learn, fastapi, uvicorn, joblib, matplotlib, seaborn). |
+
+---
+
+## Data & EDA
+
+- **Records:** 5,110, **stroke cases:** 249 (4.87 %).  
+- **Missingness:** `bmi` has 201 nulls, imputed with the training median (`28.1`).  
+- **Risk signals:** Hypertension (13 % stroke rate) and heart disease (17 %) heavily correlate with the target; smokers show slightly higher incidence.  
+- **Splits:** `train/val/test = 60/20/20` using stratified `train_test_split`, stored in `data/processed/`.  
+- Full exploration in `notebooks/01_eda.ipynb`; metrics summarized in `reports/eda_summary.txt`.
+
+---
+
+## Modeling Workflow
+
+1. **EDA & Baseline** (`notebooks/01_eda.ipynb`, `02_baseline_logreg.ipynb`) – logistic regression baseline with ROC curves.
+2. **Model Comparison** (`03_models_classification.ipynb`, `05_trees_and_tuning.ipynb`) – Decision Tree, Random Forest, Gradient Boosting; metrics exported to `models/model_comparison.csv`.
+3. **Production Training** (`src/train.py`)  
+   - Drops `id`, imputes BMI with train median.  
+   - Preprocessing via `ColumnTransformer`: `StandardScaler` on numeric (`age`, `avg_glucose_level`, `bmi`) + `OneHotEncoder(handle_unknown='ignore')` on categoricals (`gender`, `hypertension`, `heart_disease`, `ever_married`, `work_type`, `Residence_type`, `smoking_status`).  
+   - Classifier: `GradientBoostingClassifier` with the tuned params in the script (`n_estimators=200`, `learning_rate=0.1`, `max_depth=5`, `min_samples_split=50`, `min_samples_leaf=20`).  
+   - Saves the full pipeline to `models/model.bin`.  
+4. **Inference** (`src/predict.py`) – loads `model.bin`, exposes `predict_single(patient_dict)` and a CLI demo.
+
+---
+
+## Metrics
+
+From `models/model_comparison.csv`:
+
+| Model | Accuracy | ROC AUC |
 | --- | --- | --- |
-| `id` | integer | Unique encounter ID (dropped before modeling). |
-| `gender`, `ever_married`, `work_type`, `Residence_type`, `smoking_status` | categorical | One-hot encoded, `smoking_status` contains `"Unknown"`. |
-| `age`, `avg_glucose_level`, `bmi` | numeric | `bmi` has 201 missing values (3.9%). |
-| `hypertension`, `heart_disease` | binary | Indicators already encoded as {0,1}. |
-| `stroke` | binary target | 1 = stroke event, 4.9 % positives. |
+| Logistic Regression | 0.756 | 0.838 |
+| Random Forest | 0.734 | 0.837 |
+| Decision Tree | 0.694 | 0.805 |
 
-Additional facts (see `reports/eda_summary.txt`):
+Final Gradient Boosting run (`src/train.py`):
 
-- Total rows: **5,110**, columns: **12**.
-- Class imbalance: **19.5 : 1** (negative:positive).
-- BMI median: **28.1**, 201 missing entries filled with the training median.
-- Stroke rate jumps to 13 % with hypertension and 17 % with heart disease.
-- Smokers and self-employed patients show a slightly higher risk signal.
-
-Raw CSV lives in `data/raw/healthcare-dataset-stroke-data.csv`; stratified train/val/test splits are cached in `data/processed/`.
+- **Validation:** Accuracy 0.946, ROC AUC 0.821.  
+- **Test:** Accuracy 0.941, ROC AUC 0.796, Precision/Recall/F1 for the positive class currently 0 because of the 0.5 threshold.  
+- ✅ Next action: tune class weights or lower the decision threshold to recover recall without hurting ROC AUC.
 
 ---
 
-## 📁 Repository Layout
+## How to Reproduce
 
-```
-home work/2025/stroke-risk-prediction
-├── app/                # Flask API + Streamlit dashboard
-├── data/               # Raw CSV + stratified splits
-├── models/             # Serialized models & comparison table
-├── notebooks/          # 01_eda … 05_trees_and_tuning
-├── reports/            # Text summaries (EDA, metrics)
-├── scripts/            # Utility scripts
-├── src/                # Training + batch prediction code
-└── requirements.txt
-```
+> All paths assume the repo root `home work/2025/stroke-risk-prediction`.
 
----
-
-## 🔄 Modeling Pipeline
-
-1. **Split before touching the data** – 60 / 20 / 20 (train/val/test) with stratification via `train_test_split`.
-2. **Preprocessing** – drop `id`, median-impute BMI, scale numeric columns (`age`, `avg_glucose_level`, `bmi`), one-hot encode categoricals (`OneHotEncoder(handle_unknown='ignore')`).
-3. **Baseline** – Logistic Regression in `notebooks/02_baseline_logreg.ipynb` to sanity-check features and the metric pipeline.
-4. **Model search** – Evaluate Decision Tree, Random Forest, Gradient Boosting in `notebooks/03_*` and `05_trees_and_tuning.ipynb`, log comparisons to `models/model_comparison.csv`.
-5. **Production script** – `src/train.py` rebuilds the best preprocessing + Gradient Boosting pipeline, fits it, prints metrics, and saves `models/model.bin`.
-6. **Batch inference** – `src/predict.py` exposes a reusable `predict_single` helper (used by API/UI).
-
----
-
-## 📈 Model Performance (test split)
-
-| Model | Accuracy | ROC AUC | Notes |
-| --- | --- | --- | --- |
-| Logistic Regression | 0.756 | 0.838 | Balanced baseline, best ranking ability so far. |
-| Random Forest | 0.734 | 0.837 | 300-tree RF, slightly lower accuracy but comparable ROC AUC. |
-| Decision Tree | 0.694 | 0.805 | Overfits quickly, serves as reference. |
-| Gradient Boosting (tuned) | 0.941 | 0.796 | `n_estimators=200`, `learning_rate=0.1`, `max_depth=5`, accuracy inflated by class imbalance – needs threshold tuning to recover recall. |
-
-Key insight: ROC AUC remains the most honest metric under the 5 % positive rate. Gradient Boosting brings tighter calibration but, with the default 0.5 cutoff, misses rare strokes; the next iteration should focus on probability calibration and cost-sensitive thresholding.
-
----
-
-## 🛠️ Reproducing the Project
-
-### 1. Environment
+### 1. Create environment
 
 ```bash
-cd "home work/2025/stroke-risk-prediction"
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-# API/UI helpers (if not already installed)
+# Serving stack
 pip install flask streamlit requests
 ```
 
-### 2. Data
+### 2. Prepare data
 
-1. Download the Kaggle CSV and place it at `data/raw/healthcare-dataset-stroke-data.csv` (already present in this repo snapshot).
-2. Optional: regenerate stratified splits by rerunning `src/train.py` – the script recreates temporary dataframes each run, so no extra preprocessing file is required.
+The Kaggle CSV is already committed (`data/raw/healthcare-dataset-stroke-data.csv`). If you rebuild from scratch, download it manually or adapt `scripts/download_data.py`. Splits are generated on the fly by `src/train.py` and cached in `data/processed/`.
 
-### 3. Train the model
+### 3. Train model
 
 ```bash
 cd src
 python3 train.py
 ```
 
-Outputs include validation/test metrics and writes `../models/model.bin`. Run the script from within `src/` so the relative data path resolves correctly.
+Run from `src/` so the relative data path (`../data/raw/...`) resolves correctly. Metrics print to stdout and the pipeline saves to `../models/model.bin`.
 
-### 4. Batch inference from the CLI
+### 4. Batch inference
 
 ```bash
 cd src
 python3 predict.py
 ```
 
-The script loads the saved pipeline once and prints probabilities for two sample patients. You can also import `predict_single` in another module to score custom dictionaries.
+Edit the `test_patient_*` dictionaries or import `predict_single` in your own scripts.
 
 ---
 
-## 🌐 Serving the Model
+## Serving the Model
 
-### Flask REST API
+### Flask API (`app/main.py`)
 
 ```bash
 cd app
-python3 main.py
+python3 main.py  # starts on http://0.0.0.0:9696
 ```
 
 Sample request:
@@ -129,7 +127,7 @@ Sample request:
 curl -X POST http://0.0.0.0:9696/predict \
      -H "Content-Type: application/json" \
      -d '{
-           "gender":"Male",
+           "gender":"Female",
            "age":67,
            "hypertension":1,
            "heart_disease":1,
@@ -142,7 +140,7 @@ curl -X POST http://0.0.0.0:9696/predict \
          }'
 ```
 
-Response fields:
+Response:
 
 ```json
 {
@@ -154,39 +152,39 @@ Response fields:
 }
 ```
 
-### Streamlit dashboard
+### Streamlit Dashboard (`app/streamlit_app.py`)
 
 ```bash
 streamlit run app/streamlit_app.py
 ```
 
-- Runs a two-column form with the ten model features.
-- Talks to the Flask API (`http://localhost:9696/predict`), so keep the API server running in another terminal.
-- Shows probability, binary flag, and a qualitative risk tier (LOW → VERY HIGH), plus recommendations.
+- Two-column form that collects the ten model inputs.
+- Sends them to the Flask API and displays probability, binary prediction, and qualitative risk level (LOW → VERY HIGH) with recommendations.
+- Includes quick-test buttons (high- vs low-risk profiles) and an expandable log of the payload.
 
 ---
 
-## 📓 Notebooks
+## Notebooks
 
 | Notebook | Purpose |
 | --- | --- |
-| `01_eda.ipynb` | Initial exploration, class imbalance checks, feature distributions. |
-| `02_baseline_logreg.ipynb` | Baseline logistic regression, ROC curves, metric discussion. |
-| `03_models_classification.ipynb` | Additional classifiers + cross-validation experiments. |
-| `04_evaluation.ipynb` | Hold-out test analysis, confusion matrices. |
-| `05_trees_and_tuning.ipynb` | Gradient Boosting hyperparameter search and feature importance. |
+| `01_eda.ipynb` | Data overview, imbalance, feature exploration. |
+| `02_baseline_logreg.ipynb` | Logistic regression baseline and ROC analysis. |
+| `03_models_classification.ipynb` | Additional models + comparisons. |
+| `04_evaluation.ipynb` | Hold-out diagnostics, confusion matrices. |
+| `05_trees_and_tuning.ipynb` | Gradient Boosting tuning & feature importances. |
 
-Notebooks are deliberately verbose to document the reasoning behind every modeling decision before code moved into `src/`.
-
----
-
-## 🚀 Next Steps
-
-1. Tune a decision threshold (or adopt focal loss) to recover recall on the minority class.
-2. Calibrate probabilities (Platt scaling / isotonic regression) for clinical interpretability.
-3. Add automated evaluation + unit tests (e.g., `pytest`) to guard against regression when retraining.
-4. Containerize the API + Streamlit app for smoother deployment on Render/Fly.io/Cloud Run.
+These notebooks document every step before the code was moved to `src/`.
 
 ---
 
-Feel free to open an issue or reach out if you want to extend the project or discuss modeling trade-offs! 💬
+## Next Steps
+
+1. Tune probability thresholds / class weights to recover recall for the 5 % minority class.
+2. Calibrate predicted probabilities (Platt or isotonic) for better clinical interpretation.
+3. Automate evaluation and add regression/unit tests for the training + inference scripts.
+4. Containerize Flask + Streamlit for deployment to Render/Fly.io/Cloud Run, or switch to FastAPI for async support.
+
+---
+
+Questions or suggestions? Open an issue or ping me! 💬
