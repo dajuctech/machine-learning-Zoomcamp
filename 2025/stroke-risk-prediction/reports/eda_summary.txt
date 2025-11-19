@@ -1,0 +1,7 @@
+STROKE RISK PREDICTION - EDA SUMMARY
+============================================================
+
+Total records: 5,110
+Stroke cases: 249 (4.87%)
+Missing BMI: 201
+Class imbalance: 19.5:1
